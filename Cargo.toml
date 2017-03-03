@@ -1,0 +1,6 @@
+[package]
+name = "pptree"
+version = "0.1.0"
+authors = ["Jasper Schulz <jasper.b.schulz@gmail.com>"]
+
+[dependencies]
