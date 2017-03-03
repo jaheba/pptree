@@ -2,5 +2,8 @@
 name = "pptree"
 version = "0.1.0"
 authors = ["Jasper Schulz <jasper.b.schulz@gmail.com>"]
+description = "Parent Pointer Tree"
+repository = "https://github.com/jaheba/pptree"
+license = "MIT/Apache-2.0"
 
 [dependencies]
