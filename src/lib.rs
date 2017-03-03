@@ -1,9 +1,12 @@
 
+use std::cell::{Ref, RefCell, RefMut};
+
+
 
 pub struct Node<T> {
     nodes: *mut Tree<T>,
     parent: Option<*const Node<T>>,
-    value: T,
+    value: RefCell<T>,
 }
 
 
@@ -12,7 +15,7 @@ impl<T> Node<T> {
         Node {
             nodes: nodes,
             parent: parent,
-            value: value,
+            value: RefCell::from(value),
         }
     }
 
@@ -25,8 +28,12 @@ impl<T> Node<T> {
         }
     }
 
-    pub fn value(&self) -> &T {
-        &self.value
+    pub fn borrow(&self) -> Ref<T> {
+        self.value.borrow()
+    }
+
+    pub fn borrow_mut(&self) -> RefMut<T> {
+        self.value.borrow_mut()
     }
 
     pub fn parent(&self) -> Option<&Node<T>> {
@@ -44,12 +51,12 @@ pub struct NodeIter<'a, T: 'a> {
 }
 
 impl<'a, T> Iterator for NodeIter<'a, T> {
-    type Item = &'a T;
+    type Item = Ref<'a, T>;
 
-    fn next(&mut self) -> Option<&'a T> {
+    fn next(&mut self) -> Option<Ref<'a, T>> {
         self.node.map(|n| {
             self.node = n.parent();
-            &n.value
+            n.value.borrow()
         })
     }
 }
@@ -90,6 +97,8 @@ fn test() {
     let root = tree.root();
     let x = root.push(1).push(2).push(3);
     let y = root.push(2).push(5);
+
+    *y.borrow_mut() = 6;
 
     for v in x.iter() {
         println!("{:?}", v);
