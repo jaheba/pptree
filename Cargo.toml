@@ -1,5 +1,5 @@
 [package]
-name = "pptree"
+name = "kaktus"
 version = "0.1.0"
 authors = ["Jasper Schulz <jasper.b.schulz@gmail.com>"]
 description = "Parent Pointer Tree"
