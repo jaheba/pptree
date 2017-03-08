@@ -1,108 +1,116 @@
 
-use std::cell::{Ref, RefCell, RefMut};
+
+use std::rc::Rc;
+use std::cell::RefCell;
+use std::ops::Deref;
+
+type Tree<T> = Rc<RefCell<PPTree<T>>>;
 
 
-
-pub struct Node<T> {
-    nodes: *mut Tree<T>,
-    parent: Option<*const Node<T>>,
-    value: RefCell<T>,
+pub struct NodeData<T> {
+    value: T,
+    tree: *const RefCell<PPTree<T>>,
+    position: usize,
+    parent: Option<usize>,
 }
 
-
-impl<T> Node<T> {
-    fn new(nodes: *mut Tree<T>, parent: Option<*const Node<T>>, value: T) -> Self {
-        Node {
-            nodes: nodes,
-            parent: parent,
-            value: RefCell::from(value),
-        }
+impl<T> NodeData<T> {
+    fn new(val: T, tree: *const RefCell<PPTree<T>>, position: usize, parent: Option<usize>) -> Self {
+        NodeData { value: val, tree: tree, position: position, parent: parent }
     }
 
-    pub fn push(&self, val: T) -> &Node<T> {
-        let node = Node::new(self.nodes, Some(self), val);
+    fn tree(&self) -> &RefCell<PPTree<T>> {
         unsafe {
-            let nodes = &mut *self.nodes;
-            nodes.values.push(node);
-            nodes.values.last().unwrap()
+            &*self.tree
         }
     }
 
-    pub fn borrow(&self) -> Ref<T> {
-        self.value.borrow()
-    }
-
-    pub fn borrow_mut(&self) -> RefMut<T> {
-        self.value.borrow_mut()
-    }
-
-    pub fn parent(&self) -> Option<&Node<T>> {
-        unsafe { self.parent.map(|p| &*p) }
-    }
-
-    pub fn iter(&self) -> NodeIter<T> {
-        NodeIter { node: Some(self) }
+    fn push(&self, val: T) -> usize {
+        let new = NodeData::new(val, self.tree, 0, Some(self.position));
+        self.tree().borrow_mut().push(new)
     }
 }
 
+impl<T> Deref for NodeData<T> {
+    type Target = T;
 
-pub struct NodeIter<'a, T: 'a> {
-    node: Option<&'a Node<T>>,
-}
-
-impl<'a, T> Iterator for NodeIter<'a, T> {
-    type Item = Ref<'a, T>;
-
-    fn next(&mut self) -> Option<Ref<'a, T>> {
-        self.node.map(|n| {
-            self.node = n.parent();
-            n.value.borrow()
-        })
+    fn deref(&self) -> &T {
+        &self.value
     }
 }
 
-
-struct Tree<T> {
-    values: Vec<Node<T>>,
-}
-
-impl<T> Tree<T> {
-    fn new() -> Self {
-        Tree { values: Vec::new() }
-    }
-}
-
-
-pub struct PPTree<T> {
-    tree: Box<Tree<T>>,
+struct PPTree<T> {
+    data: Vec<NodeData<T>>,
 }
 
 impl<T> PPTree<T> {
-    pub fn new(val: T) -> Self {
-        let mut tree = Box::from(Tree::new());
-        let node = Node::new(&mut *tree, None, val);
-        tree.values.push(node);
-        PPTree { tree: tree }
+    fn new() -> Self {
+        PPTree { data: Vec::new() }
     }
 
-    pub fn root(&self) -> &Node<T> {
-        &self.tree.values[0]
+    fn push(&mut self, mut node: NodeData<T>) -> usize {
+        let pos = self.data.len();
+        node.position = pos;
+        self.data.push(node);
+        pos
+    }
+}
+
+#[derive(Clone)]
+pub struct Node<T> {
+    tree: Tree<T>,
+    idx: usize,
+}
+
+impl<T> Node<T> {
+    fn deref_node(&self) -> &NodeData<T> {
+        let raw_ptr = &*self.tree.borrow() as *const PPTree<T>;
+        let tree = unsafe {
+            &*raw_ptr
+        };
+        &tree.data[self.idx]
+    }
+
+    pub fn root(val: T) -> Node<T> {
+        let tree = Rc::from(RefCell::from(PPTree::new()));
+        let this = NodeData::new(val, tree.deref(), 0, None);
+        let idx = tree.borrow_mut().push(this);
+        Node { tree: tree, idx: idx }
+    }
+
+    pub fn push(&self, val: T) -> Self {
+        let node = self.deref_node();
+        let new_pos = node.push(val);
+        Node { tree: self.tree.clone(), idx: new_pos }
+    }
+
+    pub fn pop(&self) -> Option<Self> {
+        let node = self.deref_node();
+        node.parent.map(|idx| Node { tree: self.tree.clone(), idx: idx} )
+    }
+}
+
+impl<T> Deref for Node<T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        &self.deref_node().value
     }
 }
 
 
 #[test]
 fn test() {
-    let tree = PPTree::new(0);
-    let root = tree.root();
-    let x = root.push(1).push(2).push(3);
-    let y = root.push(2).push(5);
+    let x = {
+        let root = Node::root(0);
+        let one = root.push(42);
+        let x = root.push(1).push(2).push(3).push(4).push(5).push(6);
+        let val = *root;
+        assert_eq!(val, 0);
+        one
+    };
 
-    *y.borrow_mut() = 6;
-
-    for v in x.iter() {
-        println!("{:?}", v);
-    }
-
-    println!("{:?}", y.iter().collect::<Vec<_>>());
+    assert_eq!(*x, 42);
+    assert_eq!(*x.pop().unwrap(), 0);
+    x.push(13);
 }
