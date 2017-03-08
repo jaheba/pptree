@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["RStack","Recursive Stack"],["VStack",""]],"trait":[["Stack",""]]});
