@@ -15,14 +15,21 @@ pub struct NodeData<T> {
 }
 
 impl<T> NodeData<T> {
-    fn new(val: T, tree: *const RefCell<PPTree<T>>, position: usize, parent: Option<usize>) -> Self {
-        NodeData { value: val, tree: tree, position: position, parent: parent }
+    fn new(val: T,
+           tree: *const RefCell<PPTree<T>>,
+           position: usize,
+           parent: Option<usize>)
+           -> Self {
+        NodeData {
+            value: val,
+            tree: tree,
+            position: position,
+            parent: parent,
+        }
     }
 
     fn tree(&self) -> &RefCell<PPTree<T>> {
-        unsafe {
-            &*self.tree
-        }
+        unsafe { &*self.tree }
     }
 
     fn push(&self, val: T) -> usize {
@@ -65,9 +72,7 @@ pub struct Node<T> {
 impl<T> Node<T> {
     fn deref_node(&self) -> &NodeData<T> {
         let raw_ptr = &*self.tree.borrow() as *const PPTree<T>;
-        let tree = unsafe {
-            &*raw_ptr
-        };
+        let tree = unsafe { &*raw_ptr };
         &tree.data[self.idx]
     }
 
@@ -75,18 +80,29 @@ impl<T> Node<T> {
         let tree = Rc::from(RefCell::from(PPTree::new()));
         let this = NodeData::new(val, tree.deref(), 0, None);
         let idx = tree.borrow_mut().push(this);
-        Node { tree: tree, idx: idx }
+        Node {
+            tree: tree,
+            idx: idx,
+        }
     }
 
     pub fn push(&self, val: T) -> Self {
         let node = self.deref_node();
         let new_pos = node.push(val);
-        Node { tree: self.tree.clone(), idx: new_pos }
+        Node {
+            tree: self.tree.clone(),
+            idx: new_pos,
+        }
     }
 
     pub fn pop(&self) -> Option<Self> {
         let node = self.deref_node();
-        node.parent.map(|idx| Node { tree: self.tree.clone(), idx: idx} )
+        node.parent.map(|idx| {
+            Node {
+                tree: self.tree.clone(),
+                idx: idx,
+            }
+        })
     }
 }
 
