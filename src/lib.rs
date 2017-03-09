@@ -54,7 +54,7 @@
 //!
 //! ## Cactus stacks
 //!
-//! Due to the immutable property, it is possible to spawn of multiple values
+//! Due to the immutable property, it is possible to spawn off multiple values
 //! from the same parent, making it effecively a tree:
 //!
 //! ```ignore
@@ -108,9 +108,6 @@ impl<T> Clone for Stack<T> {
 }
 
 impl<T> Stack<T> {
-    pub fn empty() -> Self {
-        Stack()
-    }
 
     pub fn root(val: T) -> Self {
         Stack(Rc::from(StackNode {
