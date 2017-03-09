@@ -10,10 +10,10 @@
 //! ```ignore
 //! // Quickstart
 //! extern crate kaktus;
-//! // the trait `Stack` needs to be importet for `RStack`/`VStack` to work
-//! use kaktus::{Stack, RStack};
+//! // the trait `Stack` needs to be importet for `Stack`/`VStack` to work
+//! use kaktus::{Stack, Stack};
 //!
-//! let root = RStack::root(0);
+//! let root = Stack::root(0);
 //! let one = root.push(1);
 //! assert_eq!(*one.pop().unwrap(), 0);
 //! assert_eq!(*one, 1);
@@ -26,7 +26,7 @@
 //! represents the stack:
 //!
 //! ```ignore
-//! let root = RStack::root(0);
+//! let root = Stack::root(0);
 //! let one = root.push(1);
 //! let two = root.push(2);
 //! assert_eq!(*two, 2);
@@ -63,7 +63,7 @@
 //! //  \
 //! //   3 -- 4 -- 5
 //!
-//! let root = RStack::root(0);
+//! let root = Stack::root(0);
 //! let two  = root.push(1).push(2);
 //! let five = root.push(3).push(4).push(5);
 //!
@@ -73,20 +73,71 @@
 //! Crate Content
 //!
 //! This crate provides two stack implementations:
-//! [`RStack`](struct.RStack.html) and [`VStack`](struct.VStack.html). In short:
-//! `RStack` uses a recursive (pointer) architecture, whilst `VStackc` uses a
+//! [`Stack`](struct.Stack.html) and [`VStack`](struct.VStack.html). In short:
+//! `Stack` uses a recursive (pointer) architecture, whilst `VStackc` uses a
 //! vector to store the stack's data.
 //!
 
-mod rec;
-mod vec;
-
-pub use rec::RStack;
-pub use vec::VStack;
+use std::ops::Deref;
+use std::rc::Rc;
 
 
-pub trait Stack<T> where Self: Sized {
-    fn root(val: T) -> Self;
-    fn push(&self, val: T) -> Self;
-    fn pop(&self) -> Option<Self>;
+struct StackNode<T> {
+    value: T,
+    parent: Option<Stack<T>>,
+}
+
+
+/// Recursive Stack
+///
+/// A **recursive** implementation for ``Stack``.
+///
+/// ```rust,ignore
+/// pub struct StackNode<T> {
+///     value: T,
+///     parent: Option<Stack<T>>,
+/// }
+/// ```
+///
+pub struct Stack<T>(Rc<StackNode<T>>);
+
+impl<T> Clone for Stack<T> {
+    fn clone(&self) -> Self {
+        Stack(self.0.clone())
+    }
+}
+
+impl<T> Stack<T> {
+    pub fn empty() -> Self {
+        Stack()
+    }
+
+    pub fn root(val: T) -> Self {
+        Stack(Rc::from(StackNode {
+            value: val,
+            parent: None,
+        }))
+    }
+
+    pub fn push(&self, val: T) -> Self {
+        Stack(Rc::from(StackNode {
+            value: val,
+            parent: Some(Stack(self.0.clone())),
+        }))
+    }
+
+    pub fn pop(&self) -> Option<Self> {
+        match self.0.parent {
+            None => None,
+            Some(ref p) => Some(p.clone()),
+        }
+    }
+}
+
+impl<T> Deref for Stack<T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        &self.0.deref().value
+    }
 }
