@@ -1,6 +1,6 @@
 
 use std::rc::Rc;
-use std::cell::RefCell;
+use std::cell::{RefCell, Ref};
 use std::ops::Deref;
 
 use super::Stack;
@@ -15,11 +15,8 @@ impl<T> Tree<T> {
         Tree { data: Vec::new() }
     }
 
-    /// Push `Node` to vector.
-    /// Sets the index inside the node to allow spawning child-nodes from node.
-    fn push(&mut self, mut node: Node<T>) -> usize {
+    fn push(&mut self, node: Node<T>) -> usize {
         let pos = self.data.len();
-        node.position = pos;
         self.data.push(node);
         pos
     }
@@ -29,33 +26,23 @@ impl<T> Tree<T> {
 /// Node
 struct Node<T> {
     value: T,
-    tree: *const RefCell<Tree<T>>,
-    position: usize,
     parent: Option<usize>,
 }
 
 impl<T> Node<T> {
     fn new(val: T,
-           tree: *const RefCell<Tree<T>>,
-           position: usize,
            parent: Option<usize>)
            -> Self {
         Node {
             value: val,
-            tree: tree,
-            position: position,
             parent: parent,
         }
     }
 
-    fn tree(&self) -> &RefCell<Tree<T>> {
-        unsafe { &*self.tree }
-    }
-
-    fn push(&self, val: T) -> usize {
-        let new = Node::new(val, self.tree, 0, Some(self.position));
-        self.tree().borrow_mut().push(new)
-    }
+    // fn push(&self, val: T) -> usize {
+    //     let new = Node::new(val, self.tree, 0, Some(self.position));
+    //     self.tree().borrow_mut().push(new)
+    // }
 }
 
 impl<T> Deref for Node<T> {
@@ -66,7 +53,11 @@ impl<T> Deref for Node<T> {
     }
 }
 
-
+// fn elide<'a, T>(reference: &T) -> &'a T {
+//     unsafe {
+//         &*(reference as *const T)
+//     }
+// }
 
 #[derive(Clone)]
 pub struct VStack<T> {
@@ -74,22 +65,66 @@ pub struct VStack<T> {
     idx: usize,
 }
 
+struct StackRef<'a, T: 'a> {
+    r: Ref<'a, Tree<T>>,
+    idx: usize,
+}
+
+impl<'a, T> StackRef<'a, T> {
+    fn deref_node(&self) -> &Node<T> {
+        &self.r.data[self.idx]
+    }
+}
+
+impl<'a, T> Deref for StackRef<'a, T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        &self.deref_node().value
+    }
+}
+
+fn elide<'a, T>(reference: &T) -> &'a T {
+    unsafe {
+        &*(reference as *const T)
+    }
+}
 
 impl<T> VStack<T> {
-    fn deref_node(&self) -> &Node<T> {
-        let raw_ptr = &*self.tree.borrow() as *const Tree<T>;
-        let tree = unsafe { &*raw_ptr };
-        &tree.data[self.idx]
+    unsafe fn deref(&self) -> &T {
+        elide(&self.tree.borrow().data[self.idx])
     }
 
+    fn get<'a>(&'a self) -> StackRef<'a, T> {
+        // elide(&self.tree.borrow().data[self.idx])
+        StackRef { r: self.tree.borrow(), idx: self.idx }
+    }
+
+    fn try_get<'a>(&'a self) -> Option<StackRef<'a, T>> {
+        match self.tree.try_borrow() {
+            Ok(r) => Some(StackRef { r: r, idx: self.idx }),
+            _ => None,
+        }
+    }
+
+    fn try_push(&mut self, val: T) -> Option<Self> {
+        {
+            if let Err(_) = self.tree.try_borrow_mut() {
+                return None
+            }
+        }
+
+        Some(self.push(val))
+    }
 }
 
 impl<T> Stack<T> for VStack<T> {
+
     /// Constructs a new `VStack` with `val` as its root-node.
     fn root(val: T) -> VStack<T> {
         let tree = Rc::from(RefCell::from(Tree::new()));
-        let this = Node::new(val, tree.deref(), 0, None);
-        let idx = tree.borrow_mut().push(this);
+        let node = Node::new(val, None);
+        let idx = tree.borrow_mut().push(node);
         VStack {
             tree: tree,
             idx: idx,
@@ -97,8 +132,8 @@ impl<T> Stack<T> for VStack<T> {
     }
 
     fn push(&self, val: T) -> Self {
-        let node = self.deref_node();
-        let new_pos = node.push(val);
+        let new = Node::new(val, Some(self.idx));
+        let new_pos = self.tree.borrow_mut().push(new);
         VStack {
             tree: self.tree.clone(),
             idx: new_pos,
@@ -106,8 +141,8 @@ impl<T> Stack<T> for VStack<T> {
     }
 
     fn pop(&self) -> Option<Self> {
-        let node = self.deref_node();
-        node.parent.map(|idx| {
+        let node = self.get();
+        node.deref_node().parent.map(|idx| {
             VStack {
                 tree: self.tree.clone(),
                 idx: idx,
@@ -116,10 +151,21 @@ impl<T> Stack<T> for VStack<T> {
     }
 }
 
-impl<T> Deref for VStack<T> {
-    type Target = T;
 
-    fn deref(&self) -> &T {
-        &self.deref_node().value
+#[test]
+fn test() {
+    let mut root = VStack::root(0);
+    let mut two = root.try_push(2).unwrap();
+    // {
+    let x = two.try_get();
+    // }
+
+    match root.try_push(2) {
+        None => println!("OK"),
+        _ => println!("not good"),
+    }
+
+    unsafe {
+        println!("{:?}", two.deref());
     }
 }

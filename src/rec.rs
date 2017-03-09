@@ -53,24 +53,3 @@ impl<T> Deref for RStack<T> {
         &self.0.deref().value
     }
 }
-
-
-// #[derive(Debug)]
-// struct X(u32);
-
-// impl Drop for X {
-//     fn drop(&mut self) {
-//         println!("Drop {:?}", self.0);
-//     }
-// }
-
-// #[test]
-// fn test() {
-//     let t = {
-//         let root = RStack::root(X(0));
-//         let two = root.push(X(1)).push(X(2));
-//         let three = root.push(X(3));
-//         let four = three.push(X(4));
-//         three
-//     };
-// }
