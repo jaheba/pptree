@@ -80,7 +80,8 @@
 
 use std::ops::Deref;
 use std::rc::Rc;
-
+use std::fmt::{self, Debug};
+use std::iter::{IntoIterator, Iterator};
 
 struct StackNode<T> {
     value: T,
@@ -136,5 +137,49 @@ impl<T> Deref for Stack<T> {
 
     fn deref(&self) -> &T {
         &self.0.deref().value
+    }
+}
+
+impl<T: Debug> Debug for Stack<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "S<{:?}>", **self)
+    }
+}
+
+
+impl<'a, T> IntoIterator for &'a Stack<T> {
+    type Item = Stack<T>;
+    type IntoIter = StackIterator<T>;
+
+    fn into_iter(self) -> StackIterator<T> {
+        StackIterator { current: Some(self.clone()) }
+    }
+}
+
+pub struct StackIterator<T> {
+    current: Option<Stack<T>>,
+}
+
+impl<T> Iterator for StackIterator<T> {
+    type Item = Stack<T>;
+
+    fn next(&mut self) -> Option<Stack<T>> {
+        let cur: Option<Stack<T>> = self.current.take();
+        self.current = cur.as_ref().and_then(|s| s.pop());
+        cur
+    }
+}
+
+
+#[test]
+fn test() {
+    let root = Stack::root(0);
+    let three = root.push(1).push(2).push(3);
+    for e in (StackIterator { current: Some(three.clone()) }) {
+        println!("{:?}", *e);
+    }
+
+    for e in &three {
+        println!("{:?}", e);
     }
 }
