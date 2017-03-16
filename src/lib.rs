@@ -1,5 +1,3 @@
-#![feature(associated_type_defaults)]
-
 //! Immutable __cactus stack__ implementation.
 //!
 //! Other terms for cactus stack include __parent pointer tree__,
@@ -83,52 +81,113 @@ use std::rc::Rc;
 use std::fmt::{self, Debug};
 use std::iter::{IntoIterator, Iterator};
 
-struct StackNode<T> {
-    value: T,
-    parent: Option<Stack<T>>,
+
+pub trait PushPop<T>
+    where Self: std::marker::Sized
+{
+    type This;
+    fn push(&self, val: T) -> Self::This;
+    fn pop(&self) -> Option<Self::This>;
+    fn peek(&self) -> Option<&T>;
+
+    fn walk(&self) -> StackIterator<T>;
+
+    fn depth(&self) -> usize {
+        self.walk().count()
+    }
 }
 
+struct Cell<T>
+    where T: Sized
+{
+    value: T,
+    parent: Option<Rc<Cell<T>>>,
+}
 
-/// Recursive Stack
-///
-/// A **recursive** implementation for ``Stack``.
-///
-/// ```rust,ignore
-/// pub struct StackNode<T> {
-///     value: T,
-///     parent: Option<Stack<T>>,
-/// }
-/// ```
-///
-pub struct Stack<T>(Rc<StackNode<T>>);
-
-impl<T> Clone for Stack<T> {
-    fn clone(&self) -> Self {
-        Stack(self.0.clone())
+impl<T> Cell<T> {
+    fn orphan(val: T) -> Rc<Self> {
+        Cell {
+                value: val,
+                parent: None,
+            }
+            .into()
     }
+
+    fn with_parent(val: T, parent: Rc<Cell<T>>) -> Rc<Self> {
+        Cell {
+                value: val,
+                parent: Some(parent),
+            }
+            .into()
+    }
+}
+
+pub struct Stack<T> {
+    cell: Rc<Cell<T>>,
 }
 
 impl<T> Stack<T> {
+    pub fn empty() -> Option<Self> {
+        None
+    }
 
     pub fn root(val: T) -> Self {
-        Stack(Rc::from(StackNode {
-            value: val,
-            parent: None,
-        }))
+        Stack::wrap(Cell::orphan(val))
     }
 
-    pub fn push(&self, val: T) -> Self {
-        Stack(Rc::from(StackNode {
-            value: val,
-            parent: Some(Stack(self.0.clone())),
-        }))
+    fn wrap(cell: Rc<Cell<T>>) -> Self {
+        Stack { cell: cell }
+    }
+}
+
+
+impl<T> Clone for Stack<T> {
+    fn clone(&self) -> Stack<T> {
+        Stack::wrap(self.cell.clone())
+    }
+}
+
+
+impl<T> PushPop<T> for Stack<T> {
+    type This = Stack<T>;
+
+    fn push(&self, val: T) -> Self {
+        Stack { cell: Cell::with_parent(val, self.cell.clone()) }
     }
 
-    pub fn pop(&self) -> Option<Self> {
-        match self.0.parent {
-            None => None,
-            Some(ref p) => Some(p.clone()),
+    fn pop(&self) -> Option<Self> {
+        self.cell.parent.as_ref().cloned().map(Stack::wrap)
+    }
+
+    fn peek(&self) -> Option<&T> {
+        Some(self.deref())
+    }
+
+    fn walk(&self) -> StackIterator<T> {
+        self.into_iter()
+    }
+}
+
+impl<T> PushPop<T> for Option<Stack<T>> {
+    type This = Stack<T>;
+
+    fn push(&self, val: T) -> Self::This {
+        match *self {
+            None => Stack::root(val),
+            Some(ref stack) => stack.push(val),
         }
+    }
+
+    fn pop(&self) -> Self {
+        self.as_ref().and_then(Stack::pop)
+    }
+
+    fn peek(&self) -> Option<&T> {
+        self.as_ref().and_then(Stack::peek)
+    }
+
+    fn walk(&self) -> StackIterator<T> {
+        StackIterator { current: self.as_ref().map(|stack| stack.clone()) }
     }
 }
 
@@ -136,7 +195,7 @@ impl<T> Deref for Stack<T> {
     type Target = T;
 
     fn deref(&self) -> &T {
-        &self.0.deref().value
+        &self.cell.deref().value
     }
 }
 
@@ -145,7 +204,6 @@ impl<T: Debug> Debug for Stack<T> {
         write!(f, "S<{:?}>", **self)
     }
 }
-
 
 impl<'a, T> IntoIterator for &'a Stack<T> {
     type Item = Stack<T>;
@@ -164,22 +222,8 @@ impl<T> Iterator for StackIterator<T> {
     type Item = Stack<T>;
 
     fn next(&mut self) -> Option<Stack<T>> {
-        let cur: Option<Stack<T>> = self.current.take();
-        self.current = cur.as_ref().and_then(|s| s.pop());
+        let cur = self.current.take();
+        self.current = cur.as_ref().and_then(Stack::pop);
         cur
-    }
-}
-
-
-#[test]
-fn test() {
-    let root = Stack::root(0);
-    let three = root.push(1).push(2).push(3);
-    for e in (StackIterator { current: Some(three.clone()) }) {
-        println!("{:?}", *e);
-    }
-
-    for e in &three {
-        println!("{:?}", e);
     }
 }
