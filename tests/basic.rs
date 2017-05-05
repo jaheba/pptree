@@ -48,3 +48,17 @@ fn depth() {
     let one = empty_stack.push(1);
     assert_eq!(one.depth(), 1);
 }
+
+#[test]
+fn default() {
+    use std::collections::HashSet;
+    use std::cell::RefCell;
+
+    let stack: Stack<RefCell<HashSet<usize>>> = Stack::root_default();
+    {
+        stack.borrow_mut().insert(42);
+    }
+
+    assert!(stack.borrow().contains(&42));
+    assert!(!stack.borrow().contains(&99));
+}

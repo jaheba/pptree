@@ -86,8 +86,11 @@ pub trait PushPop<T>
     where Self: std::marker::Sized
 {
     type This;
+
     fn push(&self, val: T) -> Self::This;
+
     fn pop(&self) -> Option<Self::This>;
+
     fn peek(&self) -> Option<&T>;
 
     fn walk(&self) -> StackIterator<T>;
@@ -122,28 +125,25 @@ impl<T> Cell<T> {
     }
 }
 
+// newype for Rc<Cell<T>>
 pub struct Stack<T> {
     cell: Rc<Cell<T>>,
 }
 
 impl<T> Stack<T> {
+    /// Empty stacks are represented by `Option<Stack<T>>::None`
     pub fn empty() -> Option<Self> {
         None
     }
 
     pub fn root(val: T) -> Self {
+        // root cell does not have a parent
         Stack::wrap(Cell::orphan(val))
     }
 
+    // basic constructor
     fn wrap(cell: Rc<Cell<T>>) -> Self {
         Stack { cell: cell }
-    }
-}
-
-
-impl<T> Clone for Stack<T> {
-    fn clone(&self) -> Stack<T> {
-        Stack::wrap(self.cell.clone())
     }
 }
 
@@ -191,6 +191,15 @@ impl<T> PushPop<T> for Option<Stack<T>> {
     }
 }
 
+
+//
+impl<T> Clone for Stack<T> {
+    fn clone(&self) -> Stack<T> {
+        Stack::wrap(self.cell.clone())
+    }
+}
+
+
 impl<T> Deref for Stack<T> {
     type Target = T;
 
@@ -198,6 +207,7 @@ impl<T> Deref for Stack<T> {
         &self.cell.deref().value
     }
 }
+
 
 impl<T: Debug> Debug for Stack<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -225,5 +235,15 @@ impl<T> Iterator for StackIterator<T> {
         let cur = self.current.take();
         self.current = cur.as_ref().and_then(Stack::pop);
         cur
+    }
+}
+
+impl<T> Stack<T> where T: Default {
+    pub fn root_default() -> Self {
+        Stack::root(T::default())
+    }
+
+    pub fn push_default(&self) -> Self {
+        self.push(T::default())
     }
 }
