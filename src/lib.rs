@@ -1,108 +1,249 @@
+//! Immutable __cactus stack__ implementation.
+//!
+//! Other terms for cactus stack include __parent pointer tree__,
+//! __spaghetti stack__, and __saguaro stack__. See
+//! [Wikipedia](https://en.wikipedia.org/wiki/Parent_pointer_tree) for more
+//! information.
+//!
+//! ```ignore
+//! // Quickstart
+//! extern crate kaktus;
+//! // the trait `Stack` needs to be importet for `Stack`/`VStack` to work
+//! use kaktus::{Stack, Stack};
+//!
+//! let root = Stack::root(0);
+//! let one = root.push(1);
+//! assert_eq!(*one.pop().unwrap(), 0);
+//! assert_eq!(*one, 1);
+//! ```
+//!
+//! # Overview
+//!
+//! The stacks described in this crate differ from traditional stacks in one
+//! decisive point, they are *immutable*. This means that a value in itself
+//! represents the stack:
+//!
+//! ```ignore
+//! let root = Stack::root(0);
+//! let one = root.push(1);
+//! let two = root.push(2);
+//! assert_eq!(*two, 2);
+//! ```
+//! Further, popping a value from the stack just returns the parent -- the
+//! originial value (and thus the stack it represents) remains valid:
+//!
+//! ```ignore
+//! let one_ = two.pop().unwrap();
+//! assert_eq!(*one_, 1);
+//! // `two` is still valid
+//! assert_eq!(*two, 2);
+//! ```
+//!
+//! For comparison, this shows how stacks are often implemented instead:
+//!
+//! ```ignore
+//! // traditional stack
+//! let mut stack = vec![0];
+//! stack.push(1);
+//! stack.push(2);
+//! let two = stack.pop().unwrap();
+//! let one = stack.pop().unwrap();
+//! ```
+//!
+//! ## Cactus stacks
+//!
+//! Due to the immutable property, it is possible to spawn off multiple values
+//! from the same parent, making it effecively a tree:
+//!
+//! ```ignore
+//! // tree structure:
+//! // 0 -- 1 -- 2
+//! //  \
+//! //   3 -- 4 -- 5
+//!
+//! let root = Stack::root(0);
+//! let two  = root.push(1).push(2);
+//! let five = root.push(3).push(4).push(5);
+//!
+//! assert_eq!(*two, 2);
+//! assert_eq!(*five, 5);
+//! ```
+//! Crate Content
+//!
+//! This crate provides two stack implementations:
+//! [`Stack`](struct.Stack.html) and [`VStack`](struct.VStack.html). In short:
+//! `Stack` uses a recursive (pointer) architecture, whilst `VStackc` uses a
+//! vector to store the stack's data.
+//!
 
-use std::cell::{Ref, RefCell, RefMut};
+use std::ops::Deref;
+use std::rc::Rc;
+use std::fmt::{self, Debug};
+use std::iter::{IntoIterator, Iterator};
 
 
+pub trait PushPop<T>
+    where Self: std::marker::Sized
+{
+    type This;
 
-pub struct Node<T> {
-    nodes: *mut Tree<T>,
-    parent: Option<*const Node<T>>,
-    value: RefCell<T>,
+    fn push(&self, val: T) -> Self::This;
+
+    fn pop(&self) -> Option<Self::This>;
+
+    fn peek(&self) -> Option<&T>;
+
+    fn walk(&self) -> StackIterator<T>;
+
+    fn depth(&self) -> usize {
+        self.walk().count()
+    }
+}
+
+struct Cell<T>
+    where T: Sized
+{
+    value: T,
+    parent: Option<Rc<Cell<T>>>,
+}
+
+impl<T> Cell<T> {
+    fn orphan(val: T) -> Rc<Self> {
+        Cell {
+                value: val,
+                parent: None,
+            }
+            .into()
+    }
+
+    fn with_parent(val: T, parent: Rc<Cell<T>>) -> Rc<Self> {
+        Cell {
+                value: val,
+                parent: Some(parent),
+            }
+            .into()
+    }
+}
+
+// newype for Rc<Cell<T>>
+pub struct Stack<T> {
+    cell: Rc<Cell<T>>,
+}
+
+impl<T> Stack<T> {
+    /// Empty stacks are represented by `Option<Stack<T>>::None`
+    pub fn empty() -> Option<Self> {
+        None
+    }
+
+    pub fn root(val: T) -> Self {
+        // root cell does not have a parent
+        Stack::wrap(Cell::orphan(val))
+    }
+
+    // basic constructor
+    fn wrap(cell: Rc<Cell<T>>) -> Self {
+        Stack { cell: cell }
+    }
 }
 
 
-impl<T> Node<T> {
-    fn new(nodes: *mut Tree<T>, parent: Option<*const Node<T>>, value: T) -> Self {
-        Node {
-            nodes: nodes,
-            parent: parent,
-            value: RefCell::from(value),
+impl<T> PushPop<T> for Stack<T> {
+    type This = Stack<T>;
+
+    fn push(&self, val: T) -> Self {
+        Stack { cell: Cell::with_parent(val, self.cell.clone()) }
+    }
+
+    fn pop(&self) -> Option<Self> {
+        self.cell.parent.as_ref().cloned().map(Stack::wrap)
+    }
+
+    fn peek(&self) -> Option<&T> {
+        Some(self.deref())
+    }
+
+    fn walk(&self) -> StackIterator<T> {
+        self.into_iter()
+    }
+}
+
+impl<T> PushPop<T> for Option<Stack<T>> {
+    type This = Stack<T>;
+
+    fn push(&self, val: T) -> Self::This {
+        match *self {
+            None => Stack::root(val),
+            Some(ref stack) => stack.push(val),
         }
     }
 
-    pub fn push(&self, val: T) -> &Node<T> {
-        let node = Node::new(self.nodes, Some(self), val);
-        unsafe {
-            let nodes = &mut *self.nodes;
-            nodes.values.push(node);
-            nodes.values.last().unwrap()
-        }
+    fn pop(&self) -> Self {
+        self.as_ref().and_then(Stack::pop)
     }
 
-    pub fn borrow(&self) -> Ref<T> {
-        self.value.borrow()
+    fn peek(&self) -> Option<&T> {
+        self.as_ref().and_then(Stack::peek)
     }
 
-    pub fn borrow_mut(&self) -> RefMut<T> {
-        self.value.borrow_mut()
-    }
-
-    pub fn parent(&self) -> Option<&Node<T>> {
-        unsafe { self.parent.map(|p| &*p) }
-    }
-
-    pub fn iter(&self) -> NodeIter<T> {
-        NodeIter { node: Some(self) }
+    fn walk(&self) -> StackIterator<T> {
+        StackIterator { current: self.as_ref().map(|stack| stack.clone()) }
     }
 }
 
 
-pub struct NodeIter<'a, T: 'a> {
-    node: Option<&'a Node<T>>,
-}
-
-impl<'a, T> Iterator for NodeIter<'a, T> {
-    type Item = Ref<'a, T>;
-
-    fn next(&mut self) -> Option<Ref<'a, T>> {
-        self.node.map(|n| {
-            self.node = n.parent();
-            n.value.borrow()
-        })
+//
+impl<T> Clone for Stack<T> {
+    fn clone(&self) -> Stack<T> {
+        Stack::wrap(self.cell.clone())
     }
 }
 
 
-struct Tree<T> {
-    values: Vec<Node<T>>,
-}
+impl<T> Deref for Stack<T> {
+    type Target = T;
 
-impl<T> Tree<T> {
-    fn new() -> Self {
-        Tree { values: Vec::new() }
+    fn deref(&self) -> &T {
+        &self.cell.deref().value
     }
 }
 
 
-pub struct PPTree<T> {
-    tree: Box<Tree<T>>,
-}
-
-impl<T> PPTree<T> {
-    pub fn new(val: T) -> Self {
-        let mut tree = Box::from(Tree::new());
-        let node = Node::new(&mut *tree, None, val);
-        tree.values.push(node);
-        PPTree { tree: tree }
-    }
-
-    pub fn root(&self) -> &Node<T> {
-        &self.tree.values[0]
+impl<T: Debug> Debug for Stack<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "S<{:?}>", **self)
     }
 }
 
+impl<'a, T> IntoIterator for &'a Stack<T> {
+    type Item = Stack<T>;
+    type IntoIter = StackIterator<T>;
 
-#[test]
-fn test() {
-    let tree = PPTree::new(0);
-    let root = tree.root();
-    let x = root.push(1).push(2).push(3);
-    let y = root.push(2).push(5);
+    fn into_iter(self) -> StackIterator<T> {
+        StackIterator { current: Some(self.clone()) }
+    }
+}
 
-    *y.borrow_mut() = 6;
+pub struct StackIterator<T> {
+    current: Option<Stack<T>>,
+}
 
-    for v in x.iter() {
-        println!("{:?}", v);
+impl<T> Iterator for StackIterator<T> {
+    type Item = Stack<T>;
+
+    fn next(&mut self) -> Option<Stack<T>> {
+        let cur = self.current.take();
+        self.current = cur.as_ref().and_then(Stack::pop);
+        cur
+    }
+}
+
+impl<T> Stack<T> where T: Default {
+    pub fn root_default() -> Self {
+        Stack::root(T::default())
     }
 
-    println!("{:?}", y.iter().collect::<Vec<_>>());
+    pub fn push_default(&self) -> Self {
+        self.push(T::default())
+    }
 }
